@@ -2,3 +2,4 @@ openai
 SpeechRecognition
 pyaudio
 python-dotenv
+python-docx
