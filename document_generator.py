@@ -1,105 +1,74 @@
+import os
+import json
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.shared import OxmlElement
-from docx.oxml.ns import qn
+from openai import OpenAI
 
-def set_cell_background(cell, fill_color):
-    """Fejlett XML trükk a sötét bal oszlop hátteréhez (Word OXML)"""
-    tcPr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'), fill_color)
-    tcPr.append(shd)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def _add_formatted_text(paragraph, text, font_color=None):
-    """Félkövér szövegek és egyedi betűszínek (pl. fehér a fekete háttéren)"""
-    parts = text.split('**')
-    for i, part in enumerate(parts):
-        run = paragraph.add_run(part)
-        if font_color:
-            run.font.color.rgb = font_color
-        if i % 2 != 0:
-            run.bold = True
-
-def save_as_word(text, filename="generated_resume.docx"):
-    doc = Document()
+def generate_word_with_semantic_mapping(user_data_json, template_path="CVtemplate.docx", output_filename="generated_resume.docx"):
+    print("🔄 Sablon szerkezetének szemantikus elemzése...")
+    doc = Document(template_path)
     
-    # 1. Margók nullázása a modern megjelenéshez
-    for section in doc.sections:
-        section.top_margin = Cm(1.0)
-        section.bottom_margin = Cm(1.0)
-        section.left_margin = Cm(1.0)
-        section.right_margin = Cm(1.0)
-        
-    # 2. Szöveg szétvágása a két oszlopra
-    left_text = ""
-    right_text = ""
-    if "[JOBB_OSZLOP]" in text:
-        parts = text.split("[JOBB_OSZLOP]")
-        left_text = parts[0].replace("[BAL_OSZLOP]", "").strip()
-        right_text = parts[1].strip()
-    else:
-        left_text = text # Biztonsági tartalék
-        
-    # 3. Kétoszlopos táblázat létrehozása
-    table = doc.add_table(rows=1, cols=2)
-    table.autofit = False
-    
-    cell_left = table.cell(0, 0)
-    cell_right = table.cell(0, 1)
-    
-    # Oszlopszélességek beállítása (~35% bal, 65% jobb)
-    cell_left.width = Cm(6.5)
-    cell_right.width = Cm(12.5)
-    
-    # BAL OSZLOP SÖTÉTRE FESTÉSE (#333333 szürke)
-    set_cell_background(cell_left, '333333')
-    
-    def write_to_cell(md_text, cell, is_left=False):
-        # Bal oldalon FEHÉR, jobb oldalon FEKETE betűk
-        text_color = RGBColor(255, 255, 255) if is_left else RGBColor(0, 0, 0)
-        
-        if is_left:
-            # Fénykép placeholder a bal oszlop tetején
-            p = cell.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run("\n[ 📷 FÉNYKÉP ]\n(Kattints ide)\n\n")
-            run.font.color.rgb = text_color
-            run.bold = True
+    paragraphs_to_modify = []
+    for p in doc.paragraphs:
+        if p.text.strip(): paragraphs_to_modify.append(p)
             
-        lines = md_text.split('\n')
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            if line.startswith('# '): # Név
-                p = cell.add_paragraph()
-                r = p.add_run(line.replace('# ', '').upper())
-                r.bold = True
-                r.font.size = Pt(16)
-                r.font.color.rgb = text_color
-                p.paragraph_format.space_before = Pt(12)
-                p.paragraph_format.space_after = Pt(12)
-            elif line.startswith('## '): # Szekció címek
-                p = cell.add_paragraph()
-                r = p.add_run(line.replace('## ', '').upper())
-                r.bold = True
-                r.font.size = Pt(12)
-                r.font.color.rgb = text_color
-                p.paragraph_format.space_before = Pt(10)
-            elif line.startswith('- ') or line.startswith('* '): # Listák
-                p = cell.add_paragraph()
-                _add_formatted_text(p, "• " + line[2:], font_color=text_color)
-                p.paragraph_format.left_indent = Cm(0.5) # Behúzás a pöttyöknek
-            else: # Sima szöveg (pl. Bemutatkozás)
-                p = cell.add_paragraph()
-                _add_formatted_text(p, line, font_color=text_color)
-                
-    # Szövegek beírása a cellákba
-    write_to_cell(left_text, cell_left, is_left=True)
-    write_to_cell(right_text, cell_right, is_left=False)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    if p.text.strip(): paragraphs_to_modify.append(p)
+                    
+    template_lines = {str(i): p.text.strip() for i, p in enumerate(paragraphs_to_modify)}
     
-    doc.save(filename)
+    prompt = f"""
+    You are an intelligent CV formatting engine.
+    
+    Here is a numbered list of text blocks extracted sequentially from a CV dummy template:
+    {json.dumps(template_lines, ensure_ascii=False, indent=2)}
+    
+    Here is the real user's data:
+    {json.dumps(user_data_json, ensure_ascii=False)}
+    
+    TASK: Analyze the semantic purpose of each numbered line in the template (e.g., Is it the Name? Contact info? A job description? A section header?).
+    Then, map the user's real data to the correct line numbers.
+    - Replace dummy headers with translated Hungarian headers.
+    - Replace dummy descriptions with the user's actual descriptions.
+    - If the template has extra slots, return an empty string "" for those line numbers to hide them.
+    
+    Return a JSON object where the KEYS are the exact string line numbers (e.g., "0", "1", "2") and the VALUES are the new replacement text for that line.
+    """
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={ "type": "json_object" },
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    replacements = json.loads(response.choices[0].message.content)
+    print("✅ AI megértette a sablont! Adatok beillesztése...")
+    
+    for str_idx, new_text in replacements.items():
+        idx = int(str_idx)
+        if idx < len(paragraphs_to_modify):
+            p = paragraphs_to_modify[idx]
+            
+            if len(p.runs) > 0:
+                style_run = p.runs[0]
+                font_name = style_run.font.name
+                font_size = style_run.font.size
+                bold = style_run.bold
+                color = style_run.font.color.rgb if style_run.font.color else None
+                
+                p.text = str(new_text)
+                
+                if len(p.runs) > 0:
+                    for run in p.runs:
+                        run.font.name = font_name
+                        run.font.size = font_size
+                        run.bold = bold
+                        if color: run.font.color.rgb = color
+            else:
+                p.text = str(new_text)
+                
+    doc.save(output_filename)
