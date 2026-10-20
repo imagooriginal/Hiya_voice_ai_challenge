@@ -1,1 +1,4 @@
 .env
+*.docx
+demo/
+__pycache__/

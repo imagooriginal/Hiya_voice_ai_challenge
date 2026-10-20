@@ -1,3 +1,9 @@
+"""Manage the conversational AI client and its in-memory interview context.
+
+The conversation history is retained in ``messages`` for the lifetime of this
+module so each request can use the prior interview turns as context.
+"""
+
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -55,7 +61,20 @@ messages = [
     {"role": "assistant", "content": kezdoszoveg}
 ]
 
+# Keep both sides of every turn so subsequent requests retain the interview context.
 def chat_with_ai(user_text):
+    """Send a user turn to the AI and append the resulting turn to the context.
+
+    Args:
+        user_text (str): The user's latest interview response.
+
+    Returns:
+        Optional[str]: The assistant's response text, or ``None`` if the
+            response has no message content.
+
+    Raises:
+        Exception: If the OpenAI client cannot create the completion.
+    """
     messages.append({"role": "user", "content": user_text})
     response = client.chat.completions.create(
         model="gpt-4o-mini",
