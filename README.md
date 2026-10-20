@@ -12,7 +12,7 @@ An interactive, voice-driven AI career coach that interviews you and automatical
 
 \### The Concept
 
-Instead of battling with "blank page syndrome", rigid forms, or complex prompting, the Resume Whisperer acts as an active HR assistant. It listens to your unstructured, conversational answers, dynamically asks follow-up questions to extract quantifiable engineering metrics (STAR method), and compiles a perfectly formatted Markdown resume.
+Instead of battling with "blank page syndrome", rigid forms, or complex prompting, the Resume Whisperer acts as an active HR assistant. It listens to your unstructured, conversational answers, dynamically asks follow-up questions to extract quantifiable engineering metrics (STAR method), and compiles a perfectly formatted Word resume.
 
 
 
